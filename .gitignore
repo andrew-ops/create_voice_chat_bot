@@ -50,3 +50,5 @@ recordings/
 # OS files
 .DS_Store
 Thumbs.db
+
+token.env
