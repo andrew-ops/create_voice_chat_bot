@@ -183,7 +183,7 @@ class VoiceManagement(commands.Cog):
             if hasattr(ch, 'parent') and isinstance(ch.parent, discord.CategoryChannel):
                 category = ch.parent
             else:
-                 return await interaction.followup.send('❌ 이 채널은 카테고리에 속해 있지 않습니다.', ephemeral=True)
+                return await interaction.followup.send('❌ 이 채널은 카테고리에 속해 있지 않습니다.', ephemeral=True)
 
         try:
             vc = await category.create_voice_channel(
