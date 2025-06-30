@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # notify_restart.sh
-WEBHOOK_URL="https://discord.com/api/webhooks/…/…"
+source "$(dirname "$0")/../notify.env"
 HOSTNAME=$(hostname)
 TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
 

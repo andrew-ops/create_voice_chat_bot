@@ -1,0 +1,22 @@
+[Unit]
+Description=Discord Voice Bot 서비스
+After=network.target
+
+[Service]
+Type=simple
+User=your_user   # 여기에 실제 Ubuntu 로그인 사용자 이름
+
+WorkingDirectory=/home/your_user/YourRepo
+
+
+Environment="PATH=/venv/bin:${PATH}"
+
+EnvironmentFile=./token.env
+EnvironmentFile=./notify.env
+ExecStart=python main.py
+ExecStartPost=./notify_restart.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
