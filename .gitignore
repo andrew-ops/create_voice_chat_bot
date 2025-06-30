@@ -52,3 +52,5 @@ recordings/
 Thumbs.db
 
 token.env
+
+created_channels.json
