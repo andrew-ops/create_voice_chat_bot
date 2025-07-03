@@ -40,8 +40,11 @@ def load_json(filename):
         with open(filename, 'w') as f:
             json.dump([], f)
         return []
-    with open(filename, 'r') as f:
-        return json.load(f)
+    try:
+        with open(filename, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return [] # 파일이 비어있거나 형식이 잘못된 경우
 
 def save_json(data, filename):
     with open(filename, 'w') as f:
@@ -53,10 +56,9 @@ class ConfirmView(ui.View):
         self.voice_channel = voice_channel
 
     async def remove_channel_from_json(self):
-        channels = load_json(CHANNELS_FILE)
-        if self.voice_channel.id in channels:
-            channels.remove(self.voice_channel.id)
-            save_json(channels, CHANNELS_FILE)
+        channels_data = load_json(CHANNELS_FILE)
+        updated_data = [d for d in channels_data if d.get('channel_id') != self.voice_channel.id]
+        save_json(updated_data, CHANNELS_FILE)
 
     @ui.button(label='확인', style=ButtonStyle.red)
     async def confirm(self, interaction: discord.Interaction, button: ui.Button):
@@ -68,18 +70,23 @@ class ConfirmView(ui.View):
 
     @ui.button(label='취소', style=ButtonStyle.grey)
     async def cancel(self, interaction: discord.Interaction, button: ui.Button):
-        view = ManagementView(voice_channel=self.voice_channel)
+        # ManagementView를 다시 생성하여 원래 상태로 되돌립니다.
+        view = ManagementView(voice_channel=self.voice_channel, creator_id=interaction.user.id)
         await interaction.response.edit_message(view=view)
 
 
 class ManagementView(ui.View):
-    def __init__(self, voice_channel: discord.VoiceChannel):
-        super().__init__(timeout=None) # 자동 삭제 기능이 있으므로 버튼은 비활성화 되지 않도록 함
+    def __init__(self, voice_channel: discord.VoiceChannel, creator_id: int):
+        super().__init__(timeout=None)
         self.voice_channel = voice_channel
+        self.creator_id = creator_id
 
     @ui.button(label='채널 삭제', style=ButtonStyle.danger)
     async def delete_channel(self, interaction: discord.Interaction, button: ui.Button):
-        # 확인/취소 버튼이 있는 새로운 View로 교체
+        if interaction.user.id != self.creator_id:
+            await interaction.response.send_message("❌ 채널을 생성한 유저만 삭제할 수 있습니다.", ephemeral=True)
+            return
+        
         view = ConfirmView(voice_channel=self.voice_channel)
         await interaction.response.edit_message(content='**정말로 채널을 삭제하시겠습니까?**', view=view, embed=None)
 
@@ -114,12 +121,16 @@ class VoiceManagement(commands.Cog):
     # --- 백그라운드 작업 ---
     @tasks.loop(minutes=1)
     async def check_empty_channels(self):
-        channels_to_check = load_json(CHANNELS_FILE)
-        if not channels_to_check:
+        channels_data = load_json(CHANNELS_FILE)
+        if not channels_data:
             return
 
         channels_to_remove = []
-        for channel_id in channels_to_check:
+        for data in channels_data:
+            channel_id = data.get('channel_id')
+            if not channel_id:
+                continue
+
             try:
                 channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
                 
@@ -132,6 +143,20 @@ class VoiceManagement(commands.Cog):
                         self.empty_since[channel_id] = datetime.utcnow()
                     elif datetime.utcnow() - self.empty_since[channel_id] > timedelta(minutes=10):
                         print(f"'{channel.name}' 채널이 10분 이상 비어있어 삭제합니다.")
+                        
+                        # 원본 메시지 수정
+                        msg_channel_id = data.get('message_channel_id')
+                        msg_id = data.get('message_id')
+                        if msg_channel_id and msg_id:
+                            try:
+                                msg_channel = self.bot.get_channel(msg_channel_id) or await self.bot.fetch_channel(msg_channel_id)
+                                message = await msg_channel.fetch_message(msg_id)
+                                await message.edit(content=f"🗑️ **{channel.name}** 채널이 10분 이상 비어있어 자동으로 삭제되었습니다.", embed=None, view=None)
+                            except discord.NotFound:
+                                print(f"자동 삭제 메시지를 수정하려 했으나 원본 메시지를 찾을 수 없습니다. (ID: {msg_id})")
+                            except Exception as e:
+                                print(f"자동 삭제 메시지 수정 중 오류 발생: {e}")
+
                         await channel.delete(reason="10분 이상 비어있어 자동 삭제")
                         channels_to_remove.append(channel_id)
                         if channel_id in self.empty_since:
@@ -147,7 +172,7 @@ class VoiceManagement(commands.Cog):
 
         if channels_to_remove:
             current_channels = load_json(CHANNELS_FILE)
-            updated_channels = [ch for ch in current_channels if ch not in channels_to_remove]
+            updated_channels = [d for d in current_channels if d.get('channel_id') not in channels_to_remove]
             save_json(updated_channels, CHANNELS_FILE)
 
     @check_empty_channels.before_loop
@@ -194,10 +219,6 @@ class VoiceManagement(commands.Cog):
         try:
             vc = await category.create_voice_channel(name=name, user_limit=limit)
             
-            channels = load_json(CHANNELS_FILE)
-            channels.append(vc.id)
-            save_json(channels, CHANNELS_FILE)
-
             embed = Embed(title="✅ 음성 채널 생성 완료",
                             description=f"음성 채널 **{vc.mention}**이(가) 성공적으로 생성되었습니다.",
                             color=discord.Color.green())
@@ -205,8 +226,17 @@ class VoiceManagement(commands.Cog):
             embed.add_field(name="**채널 이름**", value=f"`{name}`", inline=True)
             embed.add_field(name="**최대 인원**", value=f"`{limit if limit > 0 else '무제한'}`", inline=True)
             
-            view = ManagementView(voice_channel=vc)
-            await interaction.followup.send(embed=embed, view=view)
+            view = ManagementView(voice_channel=vc, creator_id=interaction.user.id)
+            message = await interaction.followup.send(embed=embed, view=view)
+
+            # JSON 파일에 채널 정보 저장 (메시지 ID 포함)
+            channels = load_json(CHANNELS_FILE)
+            channels.append({
+                'channel_id': vc.id,
+                'message_id': message.id,
+                'message_channel_id': message.channel.id
+            })
+            save_json(channels, CHANNELS_FILE)
 
         except Exception as e:
             await interaction.followup.send(f'❌ 생성 실패: {e}')
