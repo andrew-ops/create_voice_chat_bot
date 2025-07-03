@@ -6,8 +6,13 @@ import discord
 from discord.ext import commands, tasks
 from discord import app_commands, ui, ButtonStyle, Embed
 
-# token.env 파일에서 환경 변수 로드
+# .env 파일에서 환경 변수 로드
 load_dotenv('token.env')
+load_dotenv('admin_id.env')
+
+# 어드민 ID 로드 및 처리
+ADMIN_IDS_STR = os.getenv('ADMIN_IDS')
+ADMIN_IDS = [int(admin_id.strip()) for admin_id in ADMIN_IDS_STR.split(',')] if ADMIN_IDS_STR else []
 
 # 봇 인텐트 설정
 intents = discord.Intents.default()
@@ -86,6 +91,15 @@ class VoiceManagement(commands.Cog):
 
     def cog_unload(self):
         self.check_empty_channels.cancel()
+
+    # 어드민인지 확인하는 데코레이터
+    def is_admin():
+        async def predicate(interaction: discord.Interaction) -> bool:
+            if interaction.user.id not in ADMIN_IDS:
+                await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+                return False
+            return True
+        return app_commands.check(predicate)
 
     @tasks.loop(minutes=1)
     async def check_empty_channels(self):
