@@ -12,17 +12,19 @@
   - `limit`: 채널의 최대 인원 수를 지정합니다. (0은 무제한)
 - **인터랙티브 채널 관리**:
   - 채널 생성 시, 채널 정보와 함께 **'채널 삭제'** 버튼이 포함된 메시지가 전송됩니다.
+  - **채널 생성자** 또는 **어드민**만 채널을 삭제할 수 있습니다.
   - **'채널 삭제'** 버튼을 누르면, 정말로 삭제할지 묻는 확인/취소 버튼이 나타납니다.
   - **'확인'** 버튼을 눌러야만 채널이 최종적으로 삭제됩니다.
 - **자동 채널 정리**:
   - 봇이 생성한 음성 채널에 10분 이상 아무도 없으면, 해당 채널은 자동으로 삭제됩니다.
+  - 채널이 자동 삭제될 경우, 봇이 보냈던 원본 메시지도 "자동으로 삭제되었습니다" 라는 문구로 수정됩니다.
 - **영속적인 데이터 관리**:
   - **허용된 텍스트 채널** 정보는 `allowed_channels.json` 파일에 저장됩니다.
   - **생성된 음성 채널** 정보는 `created_channels.json` 파일에 저장됩니다.
   - 봇이 재시작되어도 이 파일들을 통해 정보를 기억하고, 자동 삭제 및 채널 제한 기능을 계속 수행합니다.
 
 ## 환경 변수 설정
-이 봇을 실행하려면 디스코드 봇 토큰과 어드민 ID가 필요합니다.
+이 봇을 실행하려면 디스코드 봇 토큰, 어드민 ID, 그리고 알림 채널 ID가 필요합니다.
 
 1.  **봇 토큰 설정**: 프로젝트 루트 디렉터리에 `token.env` 파일을 생성하고, 자신의 디스코드 봇 토큰을 추가합니다.
     ```env
@@ -33,6 +35,11 @@
     ```env
     # admin_id.env
     ADMIN_IDS="YOUR_ADMIN_ID_1,YOUR_ADMIN_ID_2"
+    ```
+3.  **알림 채널 설정**: `notify.env` 파일을 생성하고, 봇의 상태 및 이벤트 알림을 받을 채널의 ID를 추가합니다.
+    ```env
+    # notify.env
+    NOTIFY_CHANNEL_ID="YOUR_DISCORD_CHANNEL_ID_FOR_NOTIFICATIONS"
     ```
 
 ## 사용 방법
@@ -45,15 +52,29 @@
     python main.py
     ```
 
+## Ubuntu 서버 배포
+Ubuntu 환경에서 봇을 서비스로 등록하여 안정적으로 운영할 수 있습니다. 관련 설정 파일은 `ubuntu/` 디렉터리에 있습니다.
+
+-   `voicebot.service`: `systemd` 서비스 파일 예시입니다. 파일 내의 경로를 실제 프로젝트 위치에 맞게 수정한 후, 다음 명령어를 통해 서비스를 등록하고 실행할 수 있습니다.
+
+    ```bash
+    # 서비스 파일 복사
+    sudo cp ubuntu/voicebot.service /etc/systemd/system/
+
+    # 서비스 활성화 및 시작
+    sudo systemctl enable voicebot.service
+    sudo systemctl start voicebot.service
+    ```
+
 ## 주의 사항
-- `token.env`, `admin_id.env` 파일은 `.gitignore`에 포함되어 있으므로 Git 저장소에 업로드되지 않습니다. 개인의 봇 토큰이 외부에 노출되지 않도록 주의하세요.
+- 모든 `.env` 파일은 `.gitignore`에 포함되어 있으므로 Git 저장소에 업로드되지 않습니다. 개인의 민감한 정보가 외부에 노출되지 않도록 주의하세요.
 
 ## Git 관리 제외 파일 (.gitignore)
 보안 및 효율적인 버전 관리를 위해 `.gitignore`에 명시된 다음 파일 및 폴더들은 Git 추적에서 제외됩니다.
 
-- **환경 변수 파일**: `token.env`, `admin_id.env`, `*.env` 등. API 키와 같은 민감한 정보를 포함하므로 저장소에 업로드하지 않습니다.
-- **파이썬 캐시 및 빌드 파일**: `__pycache__/`, `build/`, `dist/` 등. 실행 시 자동으로 생성되는 파일들입니다.
-- **가상 환경 폴더**: `venv/`, `env/` 등. 프로젝트 의존성을 관리하는 로컬 폴더입니다.
-- **생성된 채널 목록**: `created_channels.json`, `allowed_channels.json`. 봇이 동적으로 생성하는 파일입니다.
-- **IDE 설정 파일**: `.vscode/`, `.idea/` 등. 개인의 개발 환경 설정 파일입니다.
-- **운영체제 생성 파일**: `.DS_Store`, `Thumbs.db` 등. 각 운영체제가 자동으로 생성하는 시스템 파일입니다.
+- **환경 변수 파일**: `token.env`, `admin_id.env`, `notify.env`, `*.env` 등.
+- **파이썬 캐시 및 빌드 파일**: `__pycache__/`, `build/`, `dist/` 등.
+- **가상 환경 폴더**: `venv/`, `env/` 등.
+- **생성된 채널 목록**: `created_channels.json`, `allowed_channels.json`.
+- **IDE 설정 파일**: `.vscode/`, `.idea/` 등.
+- **운영체제 생성 파일**: `.DS_Store`, `Thumbs.db` 등.
