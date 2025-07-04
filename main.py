@@ -287,9 +287,13 @@ class VoiceManagement(commands.Cog):
 
 
     @app_commands.command(name='createvoice', description='음성 채널을 생성하고 관리합니다.')
-    @app_commands.describe(name='생성할 채널 이름', limit='최대 인원 수 (0은 무제한)')
+    @app_commands.describe(
+        name='생성할 채널 이름',
+        limit='최대 인원 수 (0은 무제한)',
+        bitrate='음성 채널의 비트레이트 (kbps, 8-96, 서버 부스트에 따라 더 높게 가능)'
+    )
     @is_allowed_channel() # 허용된 채널에서만 사용 가능
-    async def createvoice(self, interaction: discord.Interaction, name: str, limit: int):
+    async def createvoice(self, interaction: discord.Interaction, name: str, limit: int, bitrate: int = 64):
         # defer()를 사용하여 3초 이상 걸릴 수 있는 작업에 대한 타임아웃을 방지하고, 응답을 명령어 사용자에게만 표시합니다.
         await interaction.response.defer(ephemeral=True)
         
@@ -303,8 +307,8 @@ class VoiceManagement(commands.Cog):
                 return await interaction.followup.send('❌ 이 채널은 카테고리에 속해 있지 않습니다.', ephemeral=True)
 
         try:
-            # 카테고리 안에 음성 채널을 생성합니다.
-            vc = await category.create_voice_channel(name=name, user_limit=limit)
+            # 카테고리 안에 음성 채널을 생성합니다. 비트레이트는 bps 단위이므로 1000을 곱합니다.
+            vc = await category.create_voice_channel(name=name, user_limit=limit, bitrate=bitrate * 1000)
             
             # 생성 완료 임베드 메시지를 구성합니다.
             embed = Embed(title="✅ 음성 채널 생성 완료",
@@ -313,6 +317,7 @@ class VoiceManagement(commands.Cog):
             embed.add_field(name="**카테고리**", value=f"`{category.name}`", inline=True)
             embed.add_field(name="**채널 이름**", value=f"`{name}`", inline=True)
             embed.add_field(name="**최대 인원**", value=f"`{limit if limit > 0 else '무제한'}`", inline=True)
+            embed.add_field(name="**비트레이트**", value=f"`{bitrate} kbps`", inline=True)
             
             # 채널 관리 버튼 View를 생성하고 메시지를 전송합니다.
             view = ManagementView(voice_channel=vc, creator_id=interaction.user.id)
