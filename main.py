@@ -76,9 +76,10 @@ def save_json(data, filename):
 
 class ConfirmView(ui.View):
     """채널 삭제 확인/취소 버튼을 표시하는 View 클래스입니다."""
-    def __init__(self, voice_channel: discord.VoiceChannel):
+    def __init__(self, voice_channel: discord.VoiceChannel, creator_id: int):
         super().__init__(timeout=60)  # 60초 후 버튼 비활성화
         self.voice_channel = voice_channel
+        self.creator_id = creator_id
 
     async def remove_channel_from_json(self):
         """JSON 파일에서 해당 음성 채널 정보를 삭제합니다."""
@@ -102,7 +103,7 @@ class ConfirmView(ui.View):
         """'취소' 버튼 클릭 시 실행됩니다."""
         # 이전의 관리 View(채널 삭제 버튼만 있는)로 메시지를 되돌립니다.
         # creator_id를 다시 전달하여 권한 확인을 유지합니다.
-        view = ManagementView(voice_channel=self.voice_channel, creator_id=interaction.user.id)
+        view = ManagementView(voice_channel=self.voice_channel, creator_id=self.creator_id)
         await interaction.response.edit_message(view=view)
 
 
@@ -116,13 +117,17 @@ class ManagementView(ui.View):
     @ui.button(label='채널 삭제', style=ButtonStyle.danger)
     async def delete_channel(self, interaction: discord.Interaction, button: ui.Button):
         """'채널 삭제' 버튼 클릭 시 실행됩니다."""
-        # 버튼을 누른 사용자가 채널 생성자인지 확인합니다.
-        if interaction.user.id != self.creator_id:
-            await interaction.response.send_message("❌ 채널을 생성한 유저만 삭제할 수 있습니다.", ephemeral=True)
+        # 버튼을 누른 사용자가 채널 생성자이거나 어드민/서버 관리자인지 확인합니다.
+        is_creator = interaction.user.id == self.creator_id
+        is_admin_id = interaction.user.id in ADMIN_IDS
+        is_server_admin = interaction.user.guild_permissions.administrator
+        
+        if not (is_creator or is_admin_id or is_server_admin):
+            await interaction.response.send_message("❌ 채널을 생성한 유저, 어드민 또는 서버 관리자만 삭제할 수 있습니다.", ephemeral=True)
             return
         
         # 확인/취소 버튼이 있는 ConfirmView로 메시지를 교체합니다.
-        view = ConfirmView(voice_channel=self.voice_channel)
+        view = ConfirmView(voice_channel=self.voice_channel, creator_id=self.creator_id)
         await interaction.response.edit_message(content='**정말로 채널을 삭제하시겠습니까?**', view=view, embed=None)
 
 # --- 명령어 및 기능(Cog) 클래스 ---
@@ -140,10 +145,14 @@ class VoiceManagement(commands.Cog):
 
     # --- 데코레이터 (권한 확인용) ---
     def is_admin():
-        """명령어 사용자가 어드민인지 확인하는 데코레이터입니다."""
+        """명령어 사용자가 어드민이거나 서버 관리자인지 확인하는 데코레이터입니다."""
         async def predicate(interaction: discord.Interaction) -> bool:
-            if interaction.user.id not in ADMIN_IDS:
-                await interaction.response.send_message("❌ 이 명령어를 사용할 권한이 없습니다.", ephemeral=True)
+            # 어드민 ID 목록에 있거나 서버 관리자 권한이 있는지 확인
+            is_admin_id = interaction.user.id in ADMIN_IDS
+            is_server_admin = interaction.user.guild_permissions.administrator
+            
+            if not (is_admin_id or is_server_admin):
+                await interaction.response.send_message("❌ 이 명령어는 어드민 또는 서버 관리자만 사용할 수 있습니다.", ephemeral=True)
                 return False
             return True
         return app_commands.check(predicate)
@@ -230,8 +239,8 @@ class VoiceManagement(commands.Cog):
         await self.bot.wait_until_ready()
 
     # --- 슬래시 명령어 ---
-    @app_commands.command(name='setchannel', description='(어드민) 현재 채널을 봇 사용 가능 채널로 등록합니다.')
-    @is_admin() # 어드민만 사용 가능
+    @app_commands.command(name='setchannel', description='(어드민/관리자) 현재 채널을 봇 사용 가능 채널로 등록합니다.')
+    @is_admin() # 어드민 또는 서버 관리자만 사용 가능
     async def setchannel(self, interaction: discord.Interaction):
         allowed_channels = load_json(ALLOWED_CHANNELS_FILE)
         if interaction.channel_id in allowed_channels:
@@ -241,8 +250,8 @@ class VoiceManagement(commands.Cog):
             save_json(allowed_channels, ALLOWED_CHANNELS_FILE)
             await interaction.response.send_message(f"✅ **{interaction.channel.name}** 채널을 봇 사용 가능 채널로 등록했습니다.", ephemeral=True)
 
-    @app_commands.command(name='unsetchannel', description='(어드민) 현재 채널을 봇 사용 가능 채널에서 제외합니다.')
-    @is_admin() # 어드민만 사용 가능
+    @app_commands.command(name='unsetchannel', description='(어드민/관리자) 현재 채널을 봇 사용 가능 채널에서 제외합니다.')
+    @is_admin() # 어드민 또는 서버 관리자만 사용 가능
     async def unsetchannel(self, interaction: discord.Interaction):
         allowed_channels = load_json(ALLOWED_CHANNELS_FILE)
         if interaction.channel_id not in allowed_channels:
@@ -253,7 +262,7 @@ class VoiceManagement(commands.Cog):
             await interaction.response.send_message(f"🗑️ **{interaction.channel.name}** 채널을 봇 사용 가능 채널에서 제외했습니다.", ephemeral=True)
 
 
-    @app_commands.command(name='listchannels', description='(어드민) 봇 사용이 허용된 모든 채널 목록을 보여줍니다.')
+    @app_commands.command(name='listchannels', description='(어드민/관리자) 봇 사용이 허용된 모든 채널 목록을 보여줍니다.')
     @is_admin()
     async def listchannels(self, interaction: discord.Interaction):
         """봇 사용이 허용된 채널의 목록을 임베드로 보여줍니다."""
