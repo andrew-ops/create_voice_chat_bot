@@ -299,10 +299,11 @@ class VoiceManagement(commands.Cog):
     @app_commands.describe(
         name='생성할 채널 이름',
         limit='최대 인원 수 (0은 무제한)',
-        bitrate='음성 채널의 비트레이트 (kbps, 8-96, 서버 부스트에 따라 더 높게 가능)'
+        bitrate='음성 채널의 비트레이트 (kbps, 8-96, 서버 부스트에 따라 더 높게 가능)',
+        role='채널에 접근할 수 있는 역할 (선택사항, 지정하지 않으면 카테고리 권한과 동일)'
     )
     @is_allowed_channel() # 허용된 채널에서만 사용 가능
-    async def createvoice(self, interaction: discord.Interaction, name: str, limit: int, bitrate: int = 64):
+    async def createvoice(self, interaction: discord.Interaction, name: str, limit: int, bitrate: int = 64, role: discord.Role = None):
         # defer()를 사용하여 3초 이상 걸릴 수 있는 작업에 대한 타임아웃을 방지하고, 응답을 명령어 사용자에게만 표시합니다.
         await interaction.response.defer(ephemeral=True)
         
@@ -319,6 +320,15 @@ class VoiceManagement(commands.Cog):
             # 카테고리 안에 음성 채널을 생성합니다. 비트레이트는 bps 단위이므로 1000을 곱합니다.
             vc = await category.create_voice_channel(name=name, user_limit=limit, bitrate=bitrate * 1000)
             
+            # 역할이 지정된 경우 해당 역할만 채널에 접근할 수 있도록 권한을 설정합니다.
+            if role:
+                # 기본적으로 @everyone 역할의 접근을 차단합니다.
+                await vc.set_permissions(interaction.guild.default_role, view_channel=False, connect=False)
+                # 지정된 역할에만 채널 보기 및 연결 권한을 부여합니다.
+                await vc.set_permissions(role, view_channel=True, connect=True)
+                # 채널 생성자에게도 권한을 부여합니다 (역할이 없어도 접근 가능하도록)
+                await vc.set_permissions(interaction.user, view_channel=True, connect=True)
+            
             # 생성 완료 임베드 메시지를 구성합니다.
             embed = Embed(title="✅ 음성 채널 생성 완료",
                             description=f"음성 채널 **{vc.mention}**이(가) 성공적으로 생성되었습니다.",
@@ -327,6 +337,13 @@ class VoiceManagement(commands.Cog):
             embed.add_field(name="**채널 이름**", value=f"`{name}`", inline=True)
             embed.add_field(name="**최대 인원**", value=f"`{limit if limit > 0 else '무제한'}`", inline=True)
             embed.add_field(name="**비트레이트**", value=f"`{bitrate} kbps`", inline=True)
+            
+            # 역할이 지정된 경우 임베드에 추가 정보를 표시합니다.
+            if role:
+                embed.add_field(name="**접근 권한**", value=f"{role.mention} 역할", inline=True)
+                embed.set_footer(text="💡 지정된 역할을 가진 사용자와 채널 생성자만 이 채널에 접근할 수 있습니다.")
+            else:
+                embed.add_field(name="**접근 권한**", value="카테고리와 동일", inline=True)
             
             # 채널 관리 버튼 View를 생성하고 메시지를 전송합니다.
             view = ManagementView(voice_channel=vc, creator_id=interaction.user.id)
